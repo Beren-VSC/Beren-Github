@@ -225,7 +225,6 @@ export default function App() {
   }, [cats, incomeCats, notes, transfers, isLoaded]);
 
   const totalSpent  = useMemo(() => cats.reduce((s, c) => s + c.spent, 0), [cats]);
-  const totalIncome = useMemo(() => incomeCats.reduce((s, c) => s + c.items.reduce((ss, i) => ss + i.amt, 0), 0), [incomeCats]);
 
   // spent/count คำนวณจาก items เสมอ (ไม่บวก/ลบเลขแยกต่างหาก) — กันเลขเพี้ยนถ้า filter ดันไปโดนรายการ id ซ้ำ
   // เข้าด้วยกันมากกว่า 1 ตัว (เคยเกิดบั๊กนี้มาแล้ว: ลบรายการเดียวแต่ id ชนกับอีกรายการ กลาย เป็น items ถูกกรองออกไปพร้อมกัน 2 ตัว
@@ -543,7 +542,6 @@ export default function App() {
               incomeCats={incomeCats}
               transfers={transfers}
               totalSpent={totalSpent}
-              totalIncome={totalIncome}
               onCat={id => setCatId(id)}
               onAdd={() => setShowCapture(true)}
               onItemPress={(type, cId, item) => openEdit({ type, catId: cId, item })}

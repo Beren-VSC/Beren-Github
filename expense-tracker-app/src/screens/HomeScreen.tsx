@@ -18,13 +18,18 @@ const INC_SORT_LABELS = ['จัดเรียง ↕', 'มาก → น้�
 // รวมยอดตามสัปดาห์ปฏิทินของเดือนที่กำลังดู (สัปดาห์เริ่มจันทร์ ปฏิทินแบบเดียวกับ HistoryScreen)
 // วันที่ของแต่ละรายการเป็นข้อความ "D MMM" แบบย่อ (เช่น "25 ส.ค.") — พาร์สวันที่โดยเทียบกับตัวย่อเดือนที่กำลังดู
 // ปีอ้างอิงจากปีปัจจุบันจริงเสมอ (หน้านี้ไม่มี year state แยกเหมือน HistoryScreen)
+// เดือนที่ตัวเดือน (label) ตรงกับ item.date หรือไม่ — ใช้ตัดยอดรายเดือนทั้งกราฟรายสัปดาห์และยอดคงเหลือสุทธิที่หัวจอ
+function monthMatchRegex(monthIndex: number): RegExp {
+  const monthShort = MONTHS_SHORT[monthIndex];
+  return new RegExp(`^(\\d+)\\s*${monthShort.replace(/\./g, '\\.')}`);
+}
+
 function computeWeeklyTotals(items: { date: string; amt: number }[], monthIndex: number): number[] {
   const year = new Date().getFullYear();
   const daysInMonth = getDaysInMonth(year, monthIndex);
   const firstWeekday = getFirstWeekdayMonFirst(year, monthIndex);
   const weekCount = Math.ceil((firstWeekday + daysInMonth) / 7);
-  const monthShort = MONTHS_SHORT[monthIndex];
-  const dayMatchRegex = new RegExp(`^(\\d+)\\s*${monthShort.replace(/\./g, '\\.')}`);
+  const dayMatchRegex = monthMatchRegex(monthIndex);
   const sums = new Array(weekCount).fill(0);
   items.forEach(item => {
     const m = item.date.match(dayMatchRegex);
@@ -36,12 +41,17 @@ function computeWeeklyTotals(items: { date: string; amt: number }[], monthIndex:
   return sums;
 }
 
+// ยอดรวมรายจ่าย/รายรับเฉพาะเดือนที่กำลังดู (mo) — ใช้กับ "คงเหลือสุทธิ" ที่หัวจอ ให้ตัดยอดใหม่ทุกเดือนตามเดือนที่เลื่อนดู
+function sumInMonth(items: { date: string; amt: number }[], monthIndex: number): number {
+  const dayMatchRegex = monthMatchRegex(monthIndex);
+  return items.reduce((s, item) => s + (dayMatchRegex.test(item.date) ? item.amt : 0), 0);
+}
+
 interface Props {
   cats: ExpenseCategory[];
   incomeCats: IncomeCategory[];
   transfers: TransferItem[];
   totalSpent: number;
-  totalIncome: number;
   onCat: (id: string) => void;
   onAdd: () => void;
   onItemPress: (type: 'expense' | 'income', catId: string, item: ExpenseItem | IncomeItem) => void;
@@ -53,7 +63,7 @@ interface Props {
   syncStatus: 'idle' | 'syncing' | 'error';
 }
 
-export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, totalIncome, onCat, onAdd, onItemPress, onClearAll, onBackup, onEditCategory, onOpenLockSettings, onOpenTransfer, syncStatus }: Props) {
+export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, onCat, onAdd, onItemPress, onClearAll, onBackup, onEditCategory, onOpenLockSettings, onOpenTransfer, syncStatus }: Props) {
   const insets = useSafeAreaInsets();
   const [view, setView] = useState<'expense' | 'income'>('expense');
   const [mo, setMo] = useState(() => new Date().getMonth()); // เดือนปัจจุบันจริงเป็นค่าเริ่มต้นเสมอ
@@ -79,6 +89,17 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
   );
   const maxW = Math.max(...weeklyExpense, 1);
   const maxIW = Math.max(...weeklyIncome, 1);
+
+  // ยอดรวมรายจ่าย/รายรับเฉพาะเดือนที่กำลังดู (mo) — ใช้กับ "คงเหลือสุทธิ" ที่หัวจอ ตัดยอดใหม่ทุกครั้งที่เลื่อนเดือน
+  // (เดิมใช้ totalSpent/totalIncome จาก props ซึ่งเป็นยอดรวมทั้งหมดตั้งแต่เริ่มใช้แอป ไม่เปลี่ยนตามเดือนที่เลื่อนดู)
+  const monthTotalSpent = useMemo(
+    () => sumInMonth(cats.flatMap(c => c.items), mo),
+    [cats, mo],
+  );
+  const monthTotalIncome = useMemo(
+    () => sumInMonth(incomeCats.flatMap(c => c.items), mo),
+    [incomeCats, mo],
+  );
 
   const sortedCats = useMemo(() => {
     if (sortMode === 1) return [...cats].sort((a, b) => b.spent - a.spent);
@@ -167,12 +188,12 @@ export default function HomeScreen({ cats, incomeCats, transfers, totalSpent, to
               {syncStatus === 'syncing' && <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>☁ กำลังซิงค์...</Text>}
               {syncStatus === 'error' && <Text style={{ fontSize: 10, color: COLORS.danger }}>☁ ซิงค์ไม่สำเร็จ</Text>}
             </View>
-            <Text style={s.netAmount}>{fmt(totalIncome - totalSpent)}</Text>
+            <Text style={s.netAmount}>{fmt(monthTotalIncome - monthTotalSpent)}</Text>
             <View style={{ flexDirection: 'row', gap: 10, marginVertical: 4 }}>
-              <Text style={{ fontSize: 11, color: '#6ee7b7', fontWeight: '500' }}>↑ {fmt(totalIncome)}</Text>
-              <Text style={{ fontSize: 11, color: 'rgba(255,140,140,0.85)', fontWeight: '500' }}>↓ {fmt(totalSpent)}</Text>
+              <Text style={{ fontSize: 11, color: '#6ee7b7', fontWeight: '500' }}>↑ {fmt(monthTotalIncome)}</Text>
+              <Text style={{ fontSize: 11, color: 'rgba(255,140,140,0.85)', fontWeight: '500' }}>↓ {fmt(monthTotalSpent)}</Text>
             </View>
-            <Bar pct={totalSpent / Math.max(totalIncome, 1) * 100} color={COLORS.accent} h={5} bg="rgba(255,255,255,0.12)" />
+            <Bar pct={monthTotalSpent / Math.max(monthTotalIncome, 1) * 100} color={COLORS.accent} h={5} bg="rgba(255,255,255,0.12)" />
           </View>
         </View>
 
